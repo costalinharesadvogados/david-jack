@@ -1,0 +1,19 @@
+{
+  "name": "David Jack Personal",
+  "short_name": "David Jack",
+  "description": "Fichas de anamnese, programas de treino sob medida e registro de séries — do personal para o aluno.",
+  "lang": "pt-BR",
+  "dir": "ltr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14120f",
+  "theme_color": "#14120f",
+  "categories": ["health", "fitness", "productivity"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
