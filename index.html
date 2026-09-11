@@ -204,6 +204,12 @@ ul.lista li{margin:0 0 4px}
 .agval span{flex:1;font-weight:600}
 .agval input{width:118px;min-height:44px;text-align:right;font-variant-numeric:tabular-nums}
 td.rr,th.rr{text-align:right;font-variant-numeric:tabular-nums}
+.agfl{border:1px solid var(--linha);border-radius:10px;background:#fffaf0;padding:12px;margin:0 0 10px}
+.agfl .lin{display:flex;align-items:baseline;gap:10px}
+.agfl .nm{flex:1;font-weight:700;font-size:16px}
+.agfl .tt{font-variant-numeric:tabular-nums;font-size:17px;white-space:nowrap}
+.agfl .det{font-size:13px;color:var(--tinta2);margin-top:2px;font-variant-numeric:tabular-nums}
+.agfl .btns.h button{flex:1 1 130px}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#14120f">
@@ -1005,15 +1011,14 @@ function telaAgenda(){
   const soma = linhas.reduce((s,l)=>s+l.total,0);
   const rec  = linhas.filter(l=>l.pago).reduce((s,l)=>s+l.total,0);
   const tab = linhas.length
-    ? '<div class="rolar"><table><thead><tr><th>Aluno</th><th class="rr">Aulas</th><th class="rr">Aula</th>'+
-      '<th class="rr">Total</th><th></th><th></th></tr></thead><tbody>'+
-      linhas.map(l=>'<tr><td><b>'+esc(l.nome)+'</b></td><td class="rr">'+l.n+'</td>'+
-        '<td class="rr">'+(l.unico?brl(l.unico):"vários")+'</td>'+
-        '<td class="rr"><b>'+brl(l.total)+'</b></td>'+
-        '<td><button type="button" class="mini" data-pg="'+l.id+'">'+
-          '<span class="selo '+(l.pago?"ok":"aviso")+'">'+(l.pago?"pago":"em aberto")+'</span></button></td>'+
-        '<td><button type="button" class="mini" data-cb="'+l.id+'">Cobrar</button></td></tr>').join("")+
-      '</tbody></table></div>'+
+    ? linhas.map(l=>'<div class="agfl"><div class="lin"><span class="nm">'+esc(l.nome)+'</span>'+
+        '<b class="tt">'+brl(l.total)+'</b></div>'+
+        '<div class="lin det">'+l.n+(l.n>1?' aulas':' aula')+(l.unico?' × '+brl(l.unico):' · valores diferentes')+'</div>'+
+        '<div class="btns h" style="margin-top:10px">'+
+        '<button type="button" class="mini" data-pg="'+l.id+'">'+
+          '<span class="selo '+(l.pago?"ok":"aviso")+'">'+(l.pago?"pago":"em aberto")+'</span></button>'+
+        '<button type="button" class="mini" data-cb="'+l.id+'">Cobrar no WhatsApp</button>'+
+        '</div></div>').join("")+
       '<div class="agtot"><span>Total do mês</span><b>'+brl(soma)+'</b></div>'+
       '<div class="agtot"><span>Recebido</span><b>'+brl(rec)+'</b></div>'+
       '<div class="agtot"><span>A receber</span><b>'+brl(soma-rec)+'</b></div>'+
@@ -1131,6 +1136,48 @@ function telaAlunos(){
     }};
 }
 
+/* --- edição do cadastro do aluno (dados que não vêm da anamnese clínica) --- */
+function editarCadastro(a){
+  const f = a.ficha;
+  const ide = f.identificacao = f.identificacao || {};
+  const ct  = ide.contato     = ide.contato     || {};
+  const an  = f.antropometria = f.antropometria || {};
+  const cmp = (id,rot,val,tipo,extra)=>
+    '<label class="q" for="'+id+'" style="margin-top:10px">'+rot+'</label>'+
+    '<input id="'+id+'" type="'+(tipo||"text")+'" value="'+esc(val==null?"":val)+'" '+(extra||"")+'>';
+  const d = modal('<h2>Dados do aluno</h2>'+
+    '<p class="sub">Cadastro e contato. A anamnese clínica continua vindo do formulário que o aluno preenche.</p>'+
+    cmp("eNome","Nome", ide.nome)+
+    cmp("eTel","Telefone (WhatsApp)", ct.telefone, "tel", 'inputmode="tel" placeholder="(85) 9 9999-9999"')+
+    cmp("eMail","E-mail", ct.email, "email", 'inputmode="email"')+
+    cmp("eNasc","Nascimento", ide.nascimento, "date")+
+    cmp("eCid","Cidade", ide.cidade)+
+    cmp("eProf","Profissão", ide.profissao)+
+    cmp("ePeso","Peso (kg)", an.pesoKg, "text", 'inputmode="decimal"')+
+    cmp("eAlt","Altura (cm)", an.alturaCm, "text", 'inputmode="decimal"')+
+    '<label class="q" for="eObs" style="margin-top:10px">Observações</label>'+
+    '<textarea id="eObs" placeholder="Anotações do personal sobre este aluno.">'+esc(f.observacoes||"")+'</textarea>'+
+    '<div class="btns" style="margin-top:14px"><button class="pri" id="eOk">Salvar</button>'+
+    '<button id="eNao">Cancelar</button></div>');
+  d.querySelector("#eNao").onclick = ()=>d.remove();
+  d.querySelector("#eOk").onclick = ()=>{
+    const v = id => d.querySelector("#"+id).value.trim();
+    const nome = v("eNome");
+    if(!nome){ toast("O nome não pode ficar em branco."); d.querySelector("#eNome").focus(); return; }
+    const num = s => { const n = parseFloat(String(s).replace(",",".")); return isFinite(n)&&n>0 ? n : null; };
+    ide.nome = nome;
+    ide.nascimento = v("eNasc"); ide.cidade = v("eCid"); ide.profissao = v("eProf");
+    ct.telefone = v("eTel"); ct.email = v("eMail");
+    const p = num(v("ePeso")), al = num(v("eAlt"));
+    if(p) an.pesoKg = p; else delete an.pesoKg;
+    if(al) an.alturaCm = al; else delete an.alturaCm;
+    if(p || al) an.dataMedida = an.dataMedida || new Date().toISOString().slice(0,10);
+    f.observacoes = v("eObs");
+    a.atualizadoEm = new Date().toISOString();
+    salvar(); d.remove(); desenhar(); toast("Dados de "+nome.split(" ")[0]+" atualizados.");
+  };
+}
+
 function telaFicha(){
   const a = alunoAtual();
   if(!a) return {html:'<div class="card"><p class="vazio">Escolha um aluno na carteira.</p></div>', liga(){}};
@@ -1172,6 +1219,7 @@ function telaFicha(){
     '<div class="btns" style="margin-top:14px">'+
       '<button class="pri" id="bGer">'+(a.programa?"Ver programa":"Gerar programa")+'</button>'+
       (a.programa?'<button id="bRegerar">Gerar de novo (descarta o atual)</button>':"")+
+      '<button id="bEdit">Editar dados do aluno</button>'+
       '<button id="bRegistro">Importar registro do aluno</button>'+
       '<button id="bExp">Exportar ficha (.json)</button>'+
       (f.identificacao?.contato?.telefone?'<button id="bZap">Chamar no WhatsApp</button>':"")+
@@ -1203,6 +1251,7 @@ function telaFicha(){
         if(!await pergunta("Gerar de novo?","O programa atual e as edições feitas nele serão descartados. O histórico de execuções do aluno é mantido.","Gerar de novo")) return;
         a.programa = gerarPrograma(a.ficha); salvar(); ir("programa");
       };
+      $("#bEdit").onclick = ()=>editarCadastro(a);
       $("#bExp").onclick = ()=>{
         const f2 = JSON.parse(JSON.stringify(a.ficha));
         if(a.programa && a.programa.status==="liberado"){
