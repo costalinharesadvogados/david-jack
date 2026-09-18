@@ -118,7 +118,7 @@ nav.bar button{flex:1;background:transparent;border:0;color:#9b8f76;font-size:11
   min-height:60px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:4px}
 nav.bar button.on{color:var(--ouro)}
 nav.bar svg{width:22px;height:22px}
-.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(100px + env(safe-area-inset-bottom));
+.toast{position:fixed;left:50%;transform:translateX(-50%);top:calc(74px + env(safe-area-inset-top));
   background:var(--madeira);color:var(--perg);border:1px solid var(--ouro2);border-radius:10px;
   padding:12px 16px;z-index:60;max-width:90%;font-size:14px;box-shadow:0 6px 20px rgba(0,0,0,.5);pointer-events:none}
 .modal{position:fixed;inset:0;background:rgba(10,8,6,.72);z-index:50;display:flex;align-items:flex-end;justify-content:center}
@@ -178,7 +178,7 @@ ul.lista li{margin:0 0 4px}
 .agdow{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin:0 0 6px}
 .agdow span{text-align:center;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--tinta2)}
 .aggrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
-.agdia{min-height:auto;aspect-ratio:1/1;padding:2px;display:flex;flex-direction:column;align-items:center;
+.agdia{position:relative;min-height:48px;aspect-ratio:auto;padding:2px;display:flex;flex-direction:column;align-items:center;
   justify-content:center;gap:2px;border:1px solid transparent;background:transparent;border-radius:10px;
   font-weight:600;font-size:15px;color:var(--tinta2)}
 .agdia.vaz{visibility:hidden}
@@ -227,6 +227,26 @@ td.rr,th.rr{text-align:right;font-variant-numeric:tabular-nums}
 .agmarcas select{min-height:44px;padding:6px 8px;flex:1}
 .agbloco{border:1px solid var(--linha);border-radius:10px;background:#fffaf0;margin:0 0 10px;overflow:hidden}
 .agbloco .agitem{border:0;border-radius:0;margin:0;background:transparent}
+
+/* ---------- gauntlet r1: sinais de dor e resumo ---------- */
+.agbloco.alerta{border-color:var(--vermelho);box-shadow:inset 3px 0 0 var(--vermelho)}
+.agmarcas .regua{flex:1 1 100%;font-size:11.5px;color:var(--tinta2);margin:-2px 0 0;font-style:italic}
+.agdia .pt{position:absolute;top:4px;right:5px;width:8px;height:8px;border-radius:50%;background:var(--vermelho);box-shadow:0 0 0 2px var(--perg)}
+.agresumo{display:flex;gap:10px;justify-content:space-between;font-size:13px;color:var(--tinta2);
+  border-top:1px solid var(--linha);margin-top:10px;padding-top:10px;font-variant-numeric:tabular-nums}
+.agresumo b{color:var(--tinta)}
+.marcas-hist{width:100%;border-collapse:collapse;font-size:14px;margin-top:4px}
+.marcas-hist td{padding:7px 4px;border-bottom:1px solid var(--linha);font-variant-numeric:tabular-nums}
+.marcas-hist tr:last-child td{border-bottom:0}
+.marcas-hist .alto{color:var(--vermelho);font-weight:700}
+
+/* ---------- gauntlet r2: telas de 320px ---------- */
+nav.bar button{min-width:0}
+nav.bar button span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:360px){
+  nav.bar button{font-size:10px;padding:4px 2px}
+  .agmarcas > div{flex:1 1 100%}
+}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#14120f">
@@ -966,6 +986,43 @@ function agTextoCobranca(l, mk){
   return t;
 }
 
+
+/* --- agenda: apoio ao histórico e ao resumo (gauntlet r1) --- */
+let AG_rolar = false;
+function aulasDoAluno(id){
+  const h = honor(); const fora = [];
+  Object.keys(h.aulas).forEach(dia => { if(h.aulas[dia][id] !== undefined) fora.push({dia, m: h.aulas[dia][id]}); });
+  return fora.sort((a,b)=> a.dia < b.dia ? 1 : -1);
+}
+function limparAgendaDoAluno(id){
+  const h = honor();
+  Object.keys(h.aulas).forEach(dia => {
+    delete h.aulas[dia][id];
+    if(!Object.keys(h.aulas[dia]).length) delete h.aulas[dia];
+  });
+  Object.keys(h.pagos).forEach(k => { if(k.split("|")[0] === id) delete h.pagos[k]; });
+  delete h.valores[id];
+}
+function resumoMes(mk){
+  const linhas = agFechamento(mk);
+  if(!linhas.length) return "";
+  const aulas = linhas.reduce((s,l)=>s+l.n,0), total = linhas.reduce((s,l)=>s+l.total,0);
+  const pago = linhas.filter(l=>l.pago).reduce((s,l)=>s+l.total,0);
+  return '<div class="agresumo"><span>'+aulas+' aula'+(aulas>1?'s':'')+' no mês</span>'+
+    '<span><b>'+brl(total)+'</b>'+(pago ? ' · '+brl(pago)+' recebido' : '')+'</span></div>';
+}
+function marcasDoAluno(a){
+  const l = aulasDoAluno(a.id).filter(x => x.m && typeof x.m === "object" && (x.m.dor != null || x.m.pse != null)).slice(0,8);
+  if(!l.length) return "";
+  return '<h3>Dor e esforço nas últimas aulas</h3>'+
+    '<table class="marcas-hist">'+l.map(x=>{
+      const dia = x.dia.slice(8,10)+"/"+x.dia.slice(5,7);
+      const dor = x.m.dor != null ? x.m.dor : "—", pse = x.m.pse != null ? x.m.pse : "—";
+      return "<tr><td>"+dia+"</td><td"+(Number(dor)>=7?' class="alto"':"")+">dor "+dor+"</td><td>esforço "+pse+"</td></tr>";
+    }).join("")+"</table>"+
+    '<p class="dica">Dor 7 ou mais em duas aulas seguidas pede revisão de carga antes de progredir.</p>';
+}
+
 function telaAgenda(){
   const h = honor();
   const mk = agMk(AG_mes), hoje = agHoje();
@@ -996,9 +1053,11 @@ function telaAgenda(){
     let g = "";
     for(let i=0;i<ini;i++) g += '<button type="button" class="agdia vaz" tabindex="-1"></button>';
     for(let d=1; d<=fim; d++){
-      const k = agIso(new Date(y,m,d)), n = Object.keys(agDoDia(k)).length;
+      const k = agIso(new Date(y,m,d)), doDiaK = agDoDia(k), n = Object.keys(doDiaK).length;
+      const temDor = Object.keys(doDiaK).some(x => Number(aulaMarca(doDiaK[x], "dor")) >= 7);
       g += '<button type="button" class="agdia'+(n?" tem":"")+(k===hoje?" hoje":"")+(k===AG_dia?" sel":"")+
-           '" data-d="'+k+'" aria-label="'+d+' de '+AG_MESES[m]+', '+n+' aula(s)">'+
+           '" data-d="'+k+'" aria-label="'+d+' de '+AG_MESES[m]+', '+n+' aula(s)'+(temDor?", com dor alta":"")+'">'+
+           (temDor ? '<span class="pt" aria-hidden="true"></span>' : "")+
            '<span>'+d+'</span>'+(n?'<i>'+n+'</i>':'<span class="oco"></span>')+'</button>';
     }
     const doDia = agDoDia(AG_dia);
@@ -1019,12 +1078,13 @@ function telaAgenda(){
         '<span class="vl">'+brl(on ? aulaVal(doDia[a.id]) : valorAula(a.id))+'</span></button>';
       if(!on) return bt;
       const dor = aulaMarca(doDia[a.id], "dor"), pse = aulaMarca(doDia[a.id], "pse");
-      return '<div class="agbloco">'+bt+
+      return '<div class="agbloco'+(Number(dor) >= 7 ? " alerta" : "")+'">'+bt+
         '<div class="agmarcas">'+
           '<div><label for="dor-'+a.id+'">Dor</label><select id="dor-'+a.id+'" data-dor="'+a.id+'">'+
-            escalaOpts(dor, 0, 10, "0 sem dor")+"</select></div>"+
+            escalaOpts(dor, 0, 10, "0 nenhuma")+"</select></div>"+
           '<div><label for="pse-'+a.id+'">Esforço</label><select id="pse-'+a.id+'" data-pse="'+a.id+'">'+
             escalaOpts(pse, 1, 10)+"</select></div>"+
+          (Number(dor) >= 7 ? '<p class="regua"><b>Dor '+dor+' — reveja a carga antes de progredir.</b></p>' : "")+
         "</div></div>";
     }).join("");
 
@@ -1033,16 +1093,23 @@ function telaAgenda(){
       '<p class="sub">Um toque no aluno registra a aula daquele dia. O que não estiver marcado não entra na cobrança.</p>'+
       cab+
       '<div class="agdow">'+AG_DOW.map(x=>'<span>'+x+'</span>').join("")+'</div>'+
-      '<div class="aggrid">'+g+'</div></div>'+
+      '<div class="aggrid">'+g+'</div>'+resumoMes(mk)+'</div>'+
       '<div class="card"><h2>'+dd+' de '+AG_MESES[AG_mes.getMonth()]+'</h2>'+
       '<p class="sub">'+(nDia ? nDia+(nDia>1?" aulas · ":" aula · ")+brl(somaDia) : "Nenhuma aula marcada neste dia.")+'</p>'+
-      lista+'</div>',
+      lista+
+      (nDia ? '<p class="dica">Dor: 0 nenhuma · 10 a pior que já sentiu. Esforço: 1 muito leve · 10 máximo.</p>' : "")+
+      '</div>',
       liga(){
         $("#agT1").onclick = ()=>{ AG_aba="cal"; desenhar(); };
         $("#agT2").onclick = ()=>{ AG_aba="fec"; desenhar(); };
         $("#agPre").onclick = ()=>{ AG_mes = new Date(AG_mes.getFullYear(), AG_mes.getMonth()-1, 1); AG_dia=null; desenhar(); };
         $("#agPro").onclick = ()=>{ AG_mes = new Date(AG_mes.getFullYear(), AG_mes.getMonth()+1, 1); AG_dia=null; desenhar(); };
-        document.querySelectorAll(".agdia[data-d]").forEach(b=>b.onclick=()=>{ AG_dia=b.dataset.d; desenhar(); });
+        document.querySelectorAll(".agdia[data-d]").forEach(b=>b.onclick=()=>{ AG_dia=b.dataset.d; AG_rolar=true; desenhar(); });
+        if(AG_rolar){
+          AG_rolar = false;
+          const painel = document.querySelectorAll("#app .card")[1];
+          if(painel) setTimeout(()=>painel.scrollIntoView({behavior:"smooth", block:"start"}), 40);
+        }
         document.querySelectorAll(".agitem[data-a]").forEach(b=>b.onclick=()=>{ agMarcar(AG_dia, b.dataset.a); desenhar(); });
         document.querySelectorAll("[data-dor]").forEach(s=>s.onchange=()=>{
           agAnotar(AG_dia, s.dataset.dor, "dor", s.value);
@@ -1185,7 +1252,7 @@ const MODELOS_PADRAO = [
  {
   "id": "forca-base",
   "cat": "forca",
-  "nome": "Treino de força — bloco de 4 semanas",
+  "nome": "Força — bloco de 4 semanas",
   "meta": "Ganhar força nos padrões básicos",
   "paraQuem": "Quem já treina há pelo menos três meses e executa agachamento, supino e remada com técnica estável.",
   "base": "Três sessões por semana, 4 a 6 repetições nas séries principais, descanso de 2 a 3 minutos. Esforço 7 a 8: sobra uma a duas repetições no tanque.",
@@ -1232,7 +1299,7 @@ const MODELOS_PADRAO = [
  {
   "id": "hipertrofia-base",
   "cat": "hipertrofia",
-  "nome": "Hipertrofia — superior e inferior, 4 semanas",
+  "nome": "Hipertrofia — 4 semanas",
   "meta": "Ganhar massa muscular",
   "paraQuem": "Quem treina há pelo menos seis meses e consegue quatro sessões por semana.",
   "base": "Quatro sessões, divisão superior e inferior, 8 a 12 repetições, descanso de 60 a 90 segundos. Esforço 8: a última repetição sai difícil, mas limpa.",
@@ -1283,7 +1350,7 @@ const MODELOS_PADRAO = [
  {
   "id": "cardio-base",
   "cat": "cardio",
-  "nome": "Cardio — condicionamento em 4 semanas",
+  "nome": "Cardio — 4 semanas",
   "meta": "Melhorar o fôlego e a saúde cardiovascular",
   "paraQuem": "Quem quer condicionamento sem prova-alvo. Serve para esteira, bicicleta, elíptico ou caminhada na rua.",
   "base": "Três sessões: uma contínua, uma intervalada e uma longa. Esforço 3 a 4 no contínuo, 7 a 8 nos tiros.",
@@ -2079,7 +2146,8 @@ function gerarProgramaDo(a){ const p = gerarPrograma(a.ficha); p.perfilTipo = pe
 function telaAlunos(){
   const lista = BD.alunos.length ? BD.alunos.map(a=>{
     const s = semaforo(a.ficha);
-    const st = a.programa ? (a.programa.status==="liberado" ? "programa liberado" : "programa em rascunho") : "sem programa";
+    const st = (a.programa ? (a.programa.status==="liberado" ? "treino liberado" : "treino em rascunho") : "sem treino")
+      + (a.modeloId ? " · " + nomeModeloDe(a) : "");
     return '<div class="alunobox">'+
       '<button class="item" data-id="'+a.id+'" type="button" style="margin:0">'+
       '<span style="flex:1"><span class="nm">'+esc(nomeDe(a.ficha))+'</span>'+
@@ -2221,6 +2289,7 @@ function telaFicha(){
     (r.avisos.length ? r.avisos.map(x=>'<div class="aviso-bx">'+esc(x)+'</div>').join("") : '<p class="sub">Nenhuma restrição de exercício.</p>')+
     '<p class="sub" style="margin-top:8px">'+disp.length+' de '+LIB.length+' exercícios da biblioteca sobraram depois das restrições e do equipamento declarado.</p>'+
 
+    marcasDoAluno(a)+
     '<div class="btns" style="margin-top:14px">'+
       '<button class="pri" id="bGer">'+(a.programa?"Ver programa":"Gerar programa")+'</button>'+
       (a.programa?'<button id="bRegerar">Gerar de novo (descarta o atual)</button>':"")+
@@ -2281,8 +2350,14 @@ function telaFicha(){
         if(!abrirWhats(telDe(f))) toast("O telefone da ficha não parece completo.");
       };
       $("#bDel").onclick = async ()=>{
-        if(!await pergunta("Remover "+nomeDe(a.ficha)+"?","A ficha, o programa e o histórico saem deste aparelho. Não dá para desfazer.","Remover")) return;
-        BD.alunos = BD.alunos.filter(x=>x.id!==a.id); BD.aluno_id=null; salvar(); ir("alunos"); toast("Aluno removido.");
+        const nAulas = aulasDoAluno(a.id).length;
+        if(!await pergunta("Remover "+nomeDe(a.ficha)+"?",
+          "A ficha, o programa e o histórico saem deste aparelho"+
+          (nAulas ? ", junto com "+nAulas+" aula(s) já lançada(s) na agenda — feche a cobrança antes, se ainda não fechou" : "")+
+          ". Não dá para desfazer.","Remover")) return;
+        limparAgendaDoAluno(a.id);
+        BD.alunos = BD.alunos.filter(x=>x.id!==a.id); BD.aluno_id=null; salvar(); ir("alunos");
+        toast("Aluno removido"+(nAulas ? " com as "+nAulas+" aula(s) dele." : "."));
       };
     }};
 }
