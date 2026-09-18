@@ -219,6 +219,14 @@ td.rr,th.rr{text-align:right;font-variant-numeric:tabular-nums}
 .alunoprog{display:flex;gap:10px;align-items:center;margin:6px 0 0}
 .alunoprog label{margin:0;font-size:12px;color:var(--tinta2);white-space:nowrap;font-weight:600}
 .alunoprog select{flex:1;min-height:44px;padding:8px 10px}
+
+/* ---------- marcações diárias (dor e esforço) ---------- */
+.agmarcas{display:flex;gap:8px;padding:0 12px 12px;margin:-4px 0 8px;flex-wrap:wrap}
+.agmarcas > div{flex:1 1 140px;display:flex;align-items:center;gap:8px}
+.agmarcas label{font-size:12px;font-weight:600;color:var(--tinta2);white-space:nowrap}
+.agmarcas select{min-height:44px;padding:6px 8px;flex:1}
+.agbloco{border:1px solid var(--linha);border-radius:10px;background:#fffaf0;margin:0 0 10px;overflow:hidden}
+.agbloco .agitem{border:0;border-radius:0;margin:0;background:transparent}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#14120f">
@@ -748,6 +756,7 @@ function carregar(){
   try{ const r = localStorage.getItem(CHAVE); if(r){ const o = JSON.parse(r); if(o && o.v) BD = Object.assign(BD, o); } }
   catch(e){}
   if(!Array.isArray(BD.alunos)) BD.alunos = [];
+  if(BD.perfisExtra && typeof BD.perfisExtra === "object") Object.assign(PERFIS, BD.perfisExtra);
 }
 const uid = () => (crypto && crypto.randomUUID) ? crypto.randomUUID()
   : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g,c=>{const r=Math.random()*16|0;return (c==="x"?r:(r&3|8)).toString(16);});
@@ -893,10 +902,18 @@ function valorAula(id){ const h=honor(); const v=h.valores[id]; return (typeof v
 function agAlunos(){ return BD.alunos.map(a=>({id:a.id, nome:nomeDe(a.ficha)})).sort((x,y)=>x.nome.localeCompare(y.nome,"pt-BR")); }
 function agNomeDe(id){ const a = BD.alunos.find(x=>x.id===id); return a ? nomeDe(a.ficha) : "(aluno removido)"; }
 function agDoDia(dia){ const d = honor().aulas[dia]; return (d && typeof d==="object") ? d : {}; }
+function aulaVal(x){ return typeof x === "number" ? x : (x && Number(x.v)) || 0; }
+function aulaMarca(x, campo){ return (x && typeof x === "object" && x[campo] != null) ? String(x[campo]) : ""; }
 function agMarcar(dia, id){
   const h = honor(); const d = h.aulas[dia] || (h.aulas[dia]={});
-  if(d[id] !== undefined) delete d[id]; else d[id] = valorAula(id);
+  if(d[id] !== undefined) delete d[id]; else d[id] = {v: valorAula(id)};
   if(!Object.keys(d).length) delete h.aulas[dia];
+  salvar();
+}
+function agAnotar(dia, id, campo, valor){
+  const h = honor(); const d = h.aulas[dia]; if(!d || d[id] === undefined) return;
+  if(typeof d[id] === "number") d[id] = {v: d[id]};
+  if(valor === "") delete d[id][campo]; else d[id][campo] = Number(valor);
   salvar();
 }
 /* fechamento: {id, nome, n, total, pago} do mês corrente */
@@ -906,7 +923,7 @@ function agFechamento(mk){
     if(dia.slice(0,7) !== mk) return;
     const d = h.aulas[dia];
     Object.keys(d).forEach(id=>{
-      const v = Number(d[id])||0;
+      const v = aulaVal(d[id]);
       if(!por[id]) por[id] = {id, nome:agNomeDe(id), n:0, total:0, uni:new Set()};
       por[id].n++; por[id].total += v; por[id].uni.add(v);
     });
@@ -985,15 +1002,30 @@ function telaAgenda(){
            '<span>'+d+'</span>'+(n?'<i>'+n+'</i>':'<span class="oco"></span>')+'</button>';
     }
     const doDia = agDoDia(AG_dia);
-    const somaDia = Object.keys(doDia).reduce((s,id)=>s+(Number(doDia[id])||0),0);
+    const somaDia = Object.keys(doDia).reduce((s,id)=>s+aulaVal(doDia[id]),0);
     const nDia = Object.keys(doDia).length;
     const dd = Number(AG_dia.slice(8,10));
+    const escalaOpts = (sel, de, ate, zeroRot)=>{
+      let o = '<option value="">—</option>';
+      for(let i=de;i<=ate;i++) o += '<option value="'+i+'"'+(sel===String(i)?" selected":"")+">"+
+        (i===0&&zeroRot ? zeroRot : i)+"</option>";
+      return o;
+    };
     const lista = alunos.map(a=>{
       const on = doDia[a.id] !== undefined;
-      return '<button type="button" class="agitem'+(on?" on":"")+'" data-a="'+a.id+'">'+
+      const bt = '<button type="button" class="agitem'+(on?" on":"")+'" data-a="'+a.id+'">'+
         '<span class="cx" aria-hidden="true">✓</span>'+
         '<span class="nm">'+esc(a.nome)+'</span>'+
-        '<span class="vl">'+brl(on ? doDia[a.id] : valorAula(a.id))+'</span></button>';
+        '<span class="vl">'+brl(on ? aulaVal(doDia[a.id]) : valorAula(a.id))+'</span></button>';
+      if(!on) return bt;
+      const dor = aulaMarca(doDia[a.id], "dor"), pse = aulaMarca(doDia[a.id], "pse");
+      return '<div class="agbloco">'+bt+
+        '<div class="agmarcas">'+
+          '<div><label for="dor-'+a.id+'">Dor</label><select id="dor-'+a.id+'" data-dor="'+a.id+'">'+
+            escalaOpts(dor, 0, 10, "0 sem dor")+"</select></div>"+
+          '<div><label for="pse-'+a.id+'">Esforço</label><select id="pse-'+a.id+'" data-pse="'+a.id+'">'+
+            escalaOpts(pse, 1, 10)+"</select></div>"+
+        "</div></div>";
     }).join("");
 
     return {html:
@@ -1012,6 +1044,13 @@ function telaAgenda(){
         $("#agPro").onclick = ()=>{ AG_mes = new Date(AG_mes.getFullYear(), AG_mes.getMonth()+1, 1); AG_dia=null; desenhar(); };
         document.querySelectorAll(".agdia[data-d]").forEach(b=>b.onclick=()=>{ AG_dia=b.dataset.d; desenhar(); });
         document.querySelectorAll(".agitem[data-a]").forEach(b=>b.onclick=()=>{ agMarcar(AG_dia, b.dataset.a); desenhar(); });
+        document.querySelectorAll("[data-dor]").forEach(s=>s.onchange=()=>{
+          agAnotar(AG_dia, s.dataset.dor, "dor", s.value);
+          if(Number(s.value) >= 7) toast("Dor 7 ou mais: reveja a carga e, se persistir, encaminhe para avaliação.");
+        });
+        document.querySelectorAll("[data-pse]").forEach(s=>s.onchange=()=>{
+          agAnotar(AG_dia, s.dataset.pse, "pse", s.value);
+        });
       }};
   }
 
@@ -1984,6 +2023,59 @@ function novoAlunoManual(){
   };
 }
 
+/* ---------- perfis: escolher e criar ---------- */
+function perfisOrdenados(){
+  return Object.keys(PERFIS).sort((a,b)=>PERFIS[a].nome.localeCompare(PERFIS[b].nome,"pt-BR"));
+}
+function idPerfil(nome){
+  return "p_" + String(nome).normalize("NFD").replace(/[̀-ͯ]/g,"")
+    .replace(/[^A-Za-z0-9]+/g,"_").toLowerCase().slice(0,28) + "_" + Math.random().toString(36).slice(2,5);
+}
+function criarPerfil(cb){
+  const cmp = (id,rot,val,extra)=>'<label class="q" for="'+id+'" style="margin-top:10px">'+rot+"</label>"+
+    '<input id="'+id+'" value="'+esc(val)+'" '+(extra||"")+">";
+  const d = modal('<h2>Novo perfil</h2>'+
+    '<p class="sub">O perfil define o esqueleto do treino que o motor propõe: frequência, séries, repetições e esforço.</p>'+
+    cmp("pNome","Nome do perfil","")+
+    '<label class="q" for="pDiv" style="margin-top:10px">Divisão</label>'+
+    '<select id="pDiv"><option value="corpo inteiro">corpo inteiro</option>'+
+    '<option value="alternada">alternada (superior/inferior)</option></select>'+
+    '<div class="grid2">'+
+      '<div>'+cmp("pFreq","Sessões por semana","3",'inputmode="numeric"')+"</div>"+
+      '<div>'+cmp("pEx","Exercícios por sessão","7",'inputmode="numeric"')+"</div>"+
+      '<div>'+cmp("pSer","Séries","3",'inputmode="numeric"')+"</div>"+
+      '<div>'+cmp("pDesc","Descanso (segundos)","75",'inputmode="numeric"')+"</div>"+
+      '<div>'+cmp("pReps","Repetições","8 a 12")+"</div>"+
+      '<div>'+cmp("pPse","Esforço (1 a 10)","6 a 7")+"</div>"+
+    "</div>"+
+    cmp("pObj","Objetivo","")+
+    '<div class="btns" style="margin-top:14px"><button class="pri" id="pOk">Criar perfil</button>'+
+    '<button id="pNao">Cancelar</button></div>');
+  d.querySelector("#pNao").onclick = ()=>d.remove();
+  d.querySelector("#pOk").onclick = ()=>{
+    const v = id => d.querySelector("#"+id).value.trim();
+    const n = id => { const x = parseInt(v(id),10); return isFinite(x)&&x>0 ? x : 0; };
+    const nome = v("pNome");
+    if(!nome){ toast("O perfil precisa de um nome."); d.querySelector("#pNome").focus(); return; }
+    const freq = n("pFreq")||3, ser = n("pSer")||3, nex = n("pEx")||7, desc = n("pDesc")||75;
+    const base = JSON.parse(JSON.stringify(PERFIS.outro));
+    const p = Object.assign(base, {
+      nome: nome, divisao: d.querySelector("#pDiv").value,
+      freq:[freq,freq], series:[Math.max(1,ser-1),ser], nEx:[Math.max(3,nex-1),nex],
+      reps: v("pReps")||"8 a 12", pse: v("pPse")||"6 a 7", descanso: desc,
+      objetivo: v("pObj") || "Perfil criado pelo personal.",
+      regra: "Perfil criado à mão no app por "+(BD.cfg.personal||"o personal")+"."
+    });
+    const k = idPerfil(nome);
+    BD.perfisExtra = BD.perfisExtra || {};
+    BD.perfisExtra[k] = p; PERFIS[k] = p; salvar(); d.remove();
+    toast("Perfil "+nome+" criado.");
+    if(cb) cb(k); else desenhar();
+  };
+}
+
+function gerarProgramaDo(a){ const p = gerarPrograma(a.ficha); p.perfilTipo = perfilDe(a.ficha); return p; }
+
 function telaAlunos(){
   const lista = BD.alunos.length ? BD.alunos.map(a=>{
     const s = semaforo(a.ficha);
@@ -2043,16 +2135,27 @@ function editarCadastro(a){
     cmp("eProf","Profissão", ide.profissao)+
     cmp("ePeso","Peso (kg)", an.pesoKg, "text", 'inputmode="decimal"')+
     cmp("eAlt","Altura (cm)", an.alturaCm, "text", 'inputmode="decimal"')+
+    '<label class="q" for="ePerfil" style="margin-top:10px">Perfil</label>'+
+    '<div style="display:flex;gap:8px;align-items:center"><select id="ePerfil" style="flex:1">'+
+      perfisOrdenados().map(k=>'<option value="'+k+'"'+(perfilDe(f)===k?" selected":"")+'>'+esc(PERFIS[k].nome)+'</option>').join("")+
+    '</select><button type="button" class="mini" id="eNovoPerfil">+ Novo</button></div>'+
     '<label class="q" for="eObs" style="margin-top:10px">Observações</label>'+
     '<textarea id="eObs" placeholder="Anotações do personal sobre este aluno.">'+esc(f.observacoes||"")+'</textarea>'+
     '<div class="btns" style="margin-top:14px"><button class="pri" id="eOk">Salvar</button>'+
     '<button id="eNao">Cancelar</button></div>');
   d.querySelector("#eNao").onclick = ()=>d.remove();
+  d.querySelector("#eNovoPerfil").onclick = ()=>criarPerfil(k=>{
+    const sel = d.querySelector("#ePerfil");
+    sel.innerHTML = perfisOrdenados().map(x=>'<option value="'+x+'"'+(x===k?" selected":"")+'>'+esc(PERFIS[x].nome)+'</option>').join("");
+  });
   d.querySelector("#eOk").onclick = ()=>{
     const v = id => d.querySelector("#"+id).value.trim();
     const nome = v("eNome");
     if(!nome){ toast("O nome não pode ficar em branco."); d.querySelector("#eNome").focus(); return; }
     const num = s => { const n = parseFloat(String(s).replace(",",".")); return isFinite(n)&&n>0 ? n : null; };
+    const perfilAntes = perfilDe(f);
+    f.perfil = f.perfil || {};
+    f.perfil.tipo = d.querySelector("#ePerfil").value;
     ide.nome = nome;
     ide.nascimento = v("eNasc"); ide.cidade = v("eCid"); ide.profissao = v("eProf");
     ct.telefone = v("eTel"); ct.email = v("eMail");
@@ -2062,7 +2165,18 @@ function editarCadastro(a){
     if(p || al) an.dataMedida = an.dataMedida || new Date().toISOString().slice(0,10);
     f.observacoes = v("eObs");
     a.atualizadoEm = new Date().toISOString();
-    salvar(); d.remove(); desenhar(); toast("Dados de "+nome.split(" ")[0]+" atualizados.");
+    salvar(); d.remove(); desenhar();
+    if(f.perfil.tipo !== perfilAntes && a.programa){
+      pergunta("Perfil mudou para "+PERFIS[f.perfil.tipo].nome+".",
+        "O programa atual foi montado para o perfil anterior. Gerar de novo agora? O histórico de execuções é mantido.",
+        "Gerar de novo").then(ok=>{
+          if(!ok) return;
+          if(bloqueiosDe(f).some(x=>x.nivel==="bloqueio")){ toast("Há trava de segurança na ficha: resolva antes de gerar."); return; }
+          a.programa = gerarProgramaDo(a); salvar(); desenhar(); toast("Programa refeito para o novo perfil.");
+        });
+      return;
+    }
+    toast("Dados de "+nome.split(" ")[0]+" atualizados.");
   };
 }
 
@@ -2133,14 +2247,14 @@ function telaFicha(){
       $("#bGer").onclick = ()=>{
         if(!a.programa){
           if(bl.some(x=>x.nivel==="bloqueio")){ toast("Há trava de segurança: resolva antes de gerar."); return; }
-          a.programa = gerarPrograma(a.ficha); salvar(); toast("Programa proposto. Revise antes de liberar.");
+          a.programa = gerarProgramaDo(a); salvar(); toast("Programa proposto. Revise antes de liberar.");
         }
         ir("programa");
       };
       const rg = $("#bRegerar");
       if(rg) rg.onclick = async ()=>{
         if(!await pergunta("Gerar de novo?","O programa atual e as edições feitas nele serão descartados. O histórico de execuções do aluno é mantido.","Gerar de novo")) return;
-        a.programa = gerarPrograma(a.ficha); salvar(); ir("programa");
+        a.programa = gerarProgramaDo(a); salvar(); ir("programa");
       };
       $("#bEdit").onclick = ()=>editarCadastro(a);
       $("#bExp").onclick = ()=>{
@@ -2197,10 +2311,23 @@ function telaPrograma(){
     '<p class="vazio">Ainda não há programa.</p><div class="btns"><button class="pri" id="g">Gerar programa</button></div></div>',
     liga(){ $("#g").onclick=()=>{ const bl=bloqueiosDe(a.ficha);
       if(bl.some(x=>x.nivel==="bloqueio")){ toast("Há trava de segurança na ficha."); ir("ficha"); return; }
-      a.programa=gerarPrograma(a.ficha); salvar(); desenhar(); }; }};
+      a.programa=gerarProgramaDo(a); salvar(); desenhar(); }; }};
 
   const p = a.programa, lib = p.status==="liberado";
   const vol = Object.keys(p.volume||{}).sort((x,y)=>p.volume[y]-p.volume[x]);
+
+  const mAtr = a.modeloId ? modeloDe(a.modeloId) : null;
+  const desatual = p.perfilTipo && p.perfilTipo !== perfilDe(a.ficha);
+  const cabExtra =
+    (mAtr ? '<div class="card"><div style="display:flex;gap:10px;align-items:flex-start">'+
+      '<div style="flex:1"><h2>'+esc(mAtr.nome)+'</h2>'+
+      '<p class="sub" style="margin:2px 0 0">Programa atribuído · '+mAtr.s.length+' semanas · '+sessoesDe(mAtr)+' sessões</p></div>'+
+      '<span class="selo ok">'+esc(catNome(mAtr.cat))+'</span></div>'+
+      '<div class="btns" style="margin-top:12px"><button class="pri" id="bVerModelo">Abrir a planilha</button></div></div>' : "")+
+    (desatual ? '<div class="card"><div class="aviso-bx"><b>Treino de outro perfil</b>'+
+      'Este treino foi montado para '+esc((PERFIS[p.perfilTipo]||{nome:"um perfil anterior"}).nome)+
+      ', e a ficha hoje está como '+esc(PERFIS[perfilDe(a.ficha)].nome)+'.</div>'+
+      '<div class="btns"><button class="pri" id="bRefazer">Gerar de novo com o perfil atual</button></div></div>' : "");
 
   const sessoes = p.sessoes.map((s,si)=>
     '<div class="card"><h2>'+esc(s.nome)+(s.dia?' <span class="pill">'+esc(s.dia)+'</span>':"")+'</h2>'+
@@ -2233,7 +2360,7 @@ function telaPrograma(){
     p.corrida.semanas.map(w=>'<tr><td><b>'+w.s+'</b></td><td>'+esc(w.curto)+'</td><td>'+esc(w.longo)+'</td><td>'+w.min+'</td></tr>').join("")+
     '</table></div></div>' : "";
 
-  return {html:
+  return {html: cabExtra+
     '<div class="card"><div style="display:flex;gap:10px;align-items:flex-start">'+
       '<div style="flex:1"><h2>'+esc(nomeDe(a.ficha))+'</h2>'+
       '<p class="sub">'+esc(p.perfilNome)+' · '+p.freq+'x por semana · '+esc(p.divisao)+'</p></div>'+
@@ -2273,6 +2400,12 @@ function telaPrograma(){
       '<button id="bVolta">Voltar para a ficha</button>'+
     '</div></div>',
     liga(){
+      const bvm=$("#bVerModelo"); if(bvm) bvm.onclick=()=>{ MODELO_ID=a.modeloId; ir("modelo"); };
+      const brf=$("#bRefazer"); if(brf) brf.onclick=async ()=>{
+        if(!await pergunta("Gerar de novo?","O treino atual e as edições feitas nele são descartados. O histórico de execuções do aluno é mantido.","Gerar de novo")) return;
+        if(bloqueiosDe(a.ficha).some(x=>x.nivel==="bloqueio")){ toast("Há trava de segurança na ficha."); ir("ficha"); return; }
+        a.programa = gerarProgramaDo(a); salvar(); desenhar(); toast("Treino refeito para o perfil atual.");
+      };
       document.querySelectorAll("[data-tr]").forEach(b=>b.onclick=()=>trocarEx(a,b.dataset.tr));
       document.querySelectorAll("[data-aj]").forEach(b=>b.onclick=()=>ajustarEx(a,b.dataset.aj));
       document.querySelectorAll("[data-rm]").forEach(b=>b.onclick=async ()=>{
