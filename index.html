@@ -247,6 +247,13 @@ nav.bar button span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-
   nav.bar button{font-size:10px;padding:4px 2px}
   .agmarcas > div{flex:1 1 100%}
 }
+
+/* ---------- travas: consentimento no cadastro rápido ---------- */
+.chk{display:flex;align-items:flex-start;gap:10px;margin:10px 0 0;min-height:44px}
+.chk input{width:22px;height:22px;min-height:22px;flex:0 0 auto;margin-top:2px;appearance:auto;-webkit-appearance:checkbox}
+.chk span{font-size:14.5px;line-height:1.35}
+.assumido{border-left:5px solid var(--ambar);background:#faf1de;border-radius:8px;padding:12px;margin:0 0 10px;font-size:14px}
+.assumido b{display:block;margin-bottom:2px}
 </style>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#14120f">
@@ -2066,6 +2073,12 @@ function novoAlunoManual(){
     '<label class="q" for="nPerfil" style="margin-top:10px">Perfil</label><select id="nPerfil">'+opts+"</select>"+
     '<label class="q" for="nObj" style="margin-top:10px">Objetivo</label>'+
     '<input id="nObj" placeholder="Ex.: voltar a treinar com segurança">'+
+    '<hr class="linha"><h3 style="margin:0 0 4px">Antes de prescrever</h3>'+
+    '<p class="sub" style="margin:0 0 4px">Quatro perguntas que evitam travar o programa depois.</p>'+
+    '<label class="chk"><input type="checkbox" id="nLgpd"><span>O aluno autorizou guardar e usar os dados dele (LGPD).</span></label>'+
+    '<label class="chk"><input type="checkbox" id="nLib"><span>Tem liberação médica por escrito.</span></label>'+
+    '<label class="chk"><input type="checkbox" id="nDor"><span>Relata dor no peito em esforço.</span></label>'+
+    '<label class="chk"><input type="checkbox" id="nTont"><span>Teve tontura ou desmaio nos últimos 12 meses.</span></label>'+
     '<div class="btns" style="margin-top:14px"><button class="pri" id="nOk">Cadastrar</button>'+
     '<button id="nNao">Cancelar</button></div>');
   d.querySelector("#nNao").onclick = ()=>d.remove();
@@ -2081,8 +2094,13 @@ function novoAlunoManual(){
       identificacao:{ nome:nome, nascimento:v("nNasc"), contato:{ telefone:v("nTel"), email:v("nMail") } },
       perfil:{ tipo:d.querySelector("#nPerfil").value, nivel:"iniciante",
                objetivos: obj ? [{descricao:obj}] : [] },
-      antropometria:{}, parq:{pendente:true}, saude:{pendente:true},
-      disponibilidade:{}, local:{}, consentimento:{pendente:true}, observacoes:""
+      antropometria:{},
+      parq:{pendente:true, dorNoPeito: d.querySelector("#nDor").checked,
+            tonturaOuDesmaio: d.querySelector("#nTont").checked},
+      saude:{pendente:true, liberacaoMedica:{obtida: d.querySelector("#nLib").checked}},
+      disponibilidade:{}, local:{},
+      consentimento:{pendente:true, lgpd: d.querySelector("#nLgpd").checked},
+      observacoes:""
     };
     const a = {id:uid(), ficha:ficha, programa:null, execucoes:[], criadoEm:agora};
     BD.alunos.push(a); BD.aluno_id = a.id; salvar(); d.remove(); ir("ficha");
@@ -2141,7 +2159,35 @@ function criarPerfil(cb){
   };
 }
 
-function gerarProgramaDo(a){ const p = gerarPrograma(a.ficha); p.perfilTipo = perfilDe(a.ficha); return p; }
+
+/* --- travas de segurança: bloquear ou apenas avisar (escolha em Ajustes) --- */
+function modoTravas(){ return (BD.cfg && BD.cfg.travas) === "bloqueio" ? "bloqueio" : "aviso"; }
+async function podeGerar(a){
+  const bl = bloqueiosDe(a.ficha).filter(x => x.nivel === "bloqueio");
+  if(!bl.length){ delete a.assumido; return true; }
+  if(modoTravas() === "bloqueio"){
+    toast("Trava de segurança: "+bl[0].t+". Resolva na ficha, ou mude a regra em Ajustes.");
+    return false;
+  }
+  const ok = await pergunta("Gerar assumindo a responsabilidade?",
+    "A ficha tem "+bl.length+" ponto(s) em aberto: "+bl.map(x=>x.t).join(" · ")+
+    ". Gerando agora, fica registrado no programa que você assumiu a responsabilidade técnica por essa decisão.",
+    "Assumir e gerar");
+  if(!ok) return false;
+  a.assumido = {por: BD.cfg.personal||"", cref: BD.cfg.cref||"",
+    data: new Date().toISOString().slice(0,10), travas: bl.map(x=>x.t)};
+  return true;
+}
+function textoAssumido(p){
+  if(!p || !p.assumido) return "";
+  const s = p.assumido;
+  return '<div class="assumido"><b>Responsabilidade assumida pelo profissional</b>'+
+    esc((s.por||"—")+(s.cref?" · CREF "+s.cref:"")+" em "+(s.data||"").split("-").reverse().join("/")+
+    ". Pontos em aberto na ficha: "+(s.travas||[]).join("; ")+".")+"</div>";
+}
+
+function gerarProgramaDo(a){ const p = gerarPrograma(a.ficha); p.perfilTipo = perfilDe(a.ficha);
+  if(a.assumido) p.assumido = a.assumido; return p; }
 
 function telaAlunos(){
   const lista = BD.alunos.length ? BD.alunos.map(a=>{
@@ -2237,9 +2283,9 @@ function editarCadastro(a){
     if(f.perfil.tipo !== perfilAntes && a.programa){
       pergunta("Perfil mudou para "+PERFIS[f.perfil.tipo].nome+".",
         "O programa atual foi montado para o perfil anterior. Gerar de novo agora? O histórico de execuções é mantido.",
-        "Gerar de novo").then(ok=>{
+        "Gerar de novo").then(async ok=>{
           if(!ok) return;
-          if(bloqueiosDe(f).some(x=>x.nivel==="bloqueio")){ toast("Há trava de segurança na ficha: resolva antes de gerar."); return; }
+          if(!await podeGerar(a)) return;
           a.programa = gerarProgramaDo(a); salvar(); desenhar(); toast("Programa refeito para o novo perfil.");
         });
       return;
@@ -2313,9 +2359,9 @@ function telaFicha(){
         '</table></div>' : "")+
       '</div>' : ""),
     liga(){
-      $("#bGer").onclick = ()=>{
+      $("#bGer").onclick = async ()=>{
         if(!a.programa){
-          if(bl.some(x=>x.nivel==="bloqueio")){ toast("Há trava de segurança: resolva antes de gerar."); return; }
+          if(!await podeGerar(a)) return;
           a.programa = gerarProgramaDo(a); salvar(); toast("Programa proposto. Revise antes de liberar.");
         }
         ir("programa");
@@ -2384,8 +2430,8 @@ function telaPrograma(){
   if(!a) return {html:'<div class="card"><p class="vazio">Escolha um aluno na carteira primeiro.</p></div>', liga(){}};
   if(!a.programa) return {html:'<div class="card"><h2>'+esc(nomeDe(a.ficha))+'</h2>'+
     '<p class="vazio">Ainda não há programa.</p><div class="btns"><button class="pri" id="g">Gerar programa</button></div></div>',
-    liga(){ $("#g").onclick=()=>{ const bl=bloqueiosDe(a.ficha);
-      if(bl.some(x=>x.nivel==="bloqueio")){ toast("Há trava de segurança na ficha."); ir("ficha"); return; }
+    liga(){ $("#g").onclick=async ()=>{
+      if(!await podeGerar(a)) return;
       a.programa=gerarProgramaDo(a); salvar(); desenhar(); }; }};
 
   const p = a.programa, lib = p.status==="liberado";
@@ -2440,6 +2486,7 @@ function telaPrograma(){
       '<div style="flex:1"><h2>'+esc(nomeDe(a.ficha))+'</h2>'+
       '<p class="sub">'+esc(p.perfilNome)+' · '+p.freq+'x por semana · '+esc(p.divisao)+'</p></div>'+
       '<span class="selo '+(lib?"ok":"aviso")+'">'+(lib?"liberado":"rascunho")+'</span></div>'+
+    textoAssumido(p)+
     '<div class="aviso-bx'+(lib?" ok":"")+'"><b>'+(lib?"Programa liberado em "+esc((p.liberadoEm||"").slice(0,10)):"Proposta do motor — revise antes de liberar")+'</b>'+
       esc(lib?("Assinado por "+(BD.cfg.personal||"—")+(BD.cfg.cref?" · CREF "+BD.cfg.cref:"")):"Troque, ajuste ou tire o que não fizer sentido. Enquanto for rascunho, nada vai para o aluno.")+'</div>'+
     '<p><b>Objetivo:</b> '+esc(p.objetivo)+'</p>'+
@@ -2478,7 +2525,7 @@ function telaPrograma(){
       const bvm=$("#bVerModelo"); if(bvm) bvm.onclick=()=>{ MODELO_ID=a.modeloId; ir("modelo"); };
       const brf=$("#bRefazer"); if(brf) brf.onclick=async ()=>{
         if(!await pergunta("Gerar de novo?","O treino atual e as edições feitas nele são descartados. O histórico de execuções do aluno é mantido.","Gerar de novo")) return;
-        if(bloqueiosDe(a.ficha).some(x=>x.nivel==="bloqueio")){ toast("Há trava de segurança na ficha."); ir("ficha"); return; }
+        if(!await podeGerar(a)) return;
         a.programa = gerarProgramaDo(a); salvar(); desenhar(); toast("Treino refeito para o perfil atual.");
       };
       document.querySelectorAll("[data-tr]").forEach(b=>b.onclick=()=>trocarEx(a,b.dataset.tr));
@@ -2850,6 +2897,12 @@ function telaAjustes(){
     '<div class="card"><h2>Ajustes</h2>'+
     (p?'<label class="q" for="nm">Seu nome</label><input id="nm" value="'+esc(BD.cfg.personal||"")+'">'+
        '<label class="q" for="cf" style="margin-top:12px">CREF</label><input id="cf" value="'+esc(BD.cfg.cref||"")+'" placeholder="000000-G/CE">'+
+       '<label class="q" for="tv" style="margin-top:12px">Travas de segurança</label>'+
+       '<select id="tv"><option value="aviso"'+(modoTravas()==="aviso"?" selected":"")+
+         '>Avisar e deixar eu decidir</option>'+
+         '<option value="bloqueio"'+(modoTravas()==="bloqueio"?" selected":"")+
+         '>Bloquear até resolver na ficha</option></select>'+
+       '<p class="dica">Em "avisar", o app mostra o que está em aberto (consentimento, dor no peito, liberação médica, gestante, menor de idade) e gera o programa se você assumir a responsabilidade técnica — que fica registrada no próprio programa.</p>'+
        '<div class="btns" style="margin-top:12px"><button class="pri" id="bSalvar">Salvar</button></div>'
       :'<p class="sub">Modo aluno. O treino e o histórico ficam só neste aparelho.</p>'+
        '<div class="btns"><button class="pri" id="bPac">Carregar outro treino</button></div>')+
@@ -2863,7 +2916,8 @@ function telaAjustes(){
     '<hr class="linha"><p class="sub" style="margin:0">Os dados ficam no navegador deste aparelho, sem servidor. '+
     'Dados de saúde são sensíveis: exporte a cópia de segurança para um lugar seguro e não empreste o aparelho destravado.</p></div>',
     liga(){
-      const bs=$("#bSalvar"); if(bs) bs.onclick=()=>{ BD.cfg.personal=$("#nm").value.trim(); BD.cfg.cref=$("#cf").value.trim(); salvar(); desenhar(); toast("Salvo."); };
+      const bs=$("#bSalvar"); if(bs) bs.onclick=()=>{ BD.cfg.personal=$("#nm").value.trim(); BD.cfg.cref=$("#cf").value.trim();
+        const tv=$("#tv"); if(tv) BD.cfg.travas=tv.value; salvar(); desenhar(); toast("Salvo."); };
       const bp=$("#bPac"); if(bp) bp.onclick=()=>abrirArquivo(importarPacote);
       $("#bBk").onclick=()=>baixar("copia david jack personal - "+new Date().toISOString().slice(0,10)+".json", JSON.stringify(BD,null,2));
       $("#bRest").onclick=()=>abrirArquivo(async o=>{
